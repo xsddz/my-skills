@@ -22,8 +22,8 @@ curl -fsSL https://raw.githubusercontent.com/xsddz/wikitnow/main/scripts/install
 
 用户首次发起同步请求时，**必须先执行预览，再请求确认，最后才执行正式推送**：
 
-1. **预览**：运行 `wikitnow sync <path>` （不加 `--target`），展示将要同步的文件树结构
-2. **确认**：将预览输出展示给用户，询问 "以上内容确认推送到 `<target>`？"
+1. **预览**：运行 `wikitnow sync <path>`，将命令的完整输出原文展示给用户，不要归纳或省略
+2. **确认**：询问用户 "以上内容确认推送到 `<target>`？"
 3. **推送**：用户确认后，运行 `wikitnow sync <path> --target <url>` 执行正式写入
 
 如果用户首次请求时未提供目标 URL，在预览完成后一并询问。
