@@ -1,116 +1,132 @@
-# 添加新数据源指南
+# 数据源配置与扩展指南
 
-本文档说明如何为 `tech-news` 技能添加新的平台支持。
+本文档说明 `technews` 技能如何管理数据源 URL、抓取节奏，以及如何新增平台支持。
 
-## 概览
+## 当前结构
 
-需要实现以下脚本（可选）：
+技能当前采用“每个平台一个脚本”的结构：
 
-- **`<platform>posts.py`** - 列表解析器，输出帖子数组
-- **`<platform>comments.py`** - 详情解析器，输出单帖评论树（用于详情层）
+- `scripts/hn.py`
+- `scripts/v2ex.py`
+- `scripts/fetch.sh`
+- `sources.json`
 
-## 输入规范
+每个平台脚本统一提供三个子命令：
 
-脚本接受单个参数：
-- `<html_file>` - HTML 文件路径
-- 或 `-` - 从 stdin 读取
+- `posts`：解析列表页 HTML
+- `comments`：解析详情页 HTML
+- `full`：自动从 `sources.json` 读取列表页配置，抓取列表页并批量补全详情
 
-用法：
-```bash
-python3 <platform>posts.py <文件或->
-python3 <platform>comments.py <文件或->
-```
+## 数据源配置文件
 
-## 输出规范
+`full` 模式使用的列表页 URL 与抓取间隔都放在 `sources.json`：
 
-### 列表输出结构
-
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| `title` | str | 帖子标题 |
-| `url` | str | 帖子讨论页链接 |
-| `article_url` | str\|null | 外部原文链接（无则 `null`） |
-| `author` | str | 作者 |
-| `time` | str | 发布时间（`YYYY-MM-DD HH:MM:SS +08:00`） |
-| `points` | int\|null | 点赞数（无则 `null`） |
-| `reply_count` | int | 评论数 |
-| `last_reply_by` | str\|null | 最后回复人（无则 `null`） |
-| `comments` | list | 评论列表（应返回 `[]`） |
-| `platform` | str | 平台名称 |
-
-输出为 JSON 数组（多个帖子）。
-
-### 详情输出结构
-
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| `title` | str | 帖子标题 |
-| `url` | str | 讨论页 URL |
-| `article_url` | str\|null | 外部原文链接 |
-| `total_comments` | int | 根评论数量 |
-| `total_replies` | int | 嵌套回复总数 |
-| `comments` | list | 嵌套评论树（`id, author, time, content, replies[]`） |
-
-输出为单个 JSON 对象。
-
-## 极简模板
-
-### 列表解析器
-
-```python
-#!/usr/bin/env python3
-import sys, json
-from bs4 import BeautifulSoup
-
-def parse_platform(html):
-    soup = BeautifulSoup(html, 'html.parser')
-    # TODO: 提取 posts 数组
-    return posts
-
-def main():
-    src = sys.argv[1]
-    html = sys.stdin.read() if src == '-' else open(src).read()
-    posts = parse_platform(html)
-    print(json.dumps(posts, ensure_ascii=False, indent=2))
-
-if __name__ == '__main__':
-    main()
-```
-
-### 详情解析器
-
-```python
-#!/usr/bin/env python3
-import sys, json
-from bs4 import BeautifulSoup
-
-def parse_platform_comments(html):
-    soup = BeautifulSoup(html, 'html.parser')
-    # TODO: 提取 title, url, article_url, comments 树
-    return {
-        'title': ...,
-        'url': ...,
-        'article_url': ...,
-        'total_comments': ...,
-        'total_replies': ...,
-        'comments': ...
+```json
+{
+    "hn": {
+        "list_urls": [
+            "https://news.ycombinator.com"
+        ],
+        "request_delay_seconds": 0.0
+    },
+    "v2ex": {
+        "list_urls": [
+            "https://www.v2ex.com/?tab=tech",
+            "https://www.v2ex.com/?tab=hot",
+            "https://www.v2ex.com/?tab=all"
+        ],
+        "request_delay_seconds": 0.0
     }
-
-def main():
-    src = sys.argv[1]
-    html = sys.stdin.read() if src == '-' else open(src).read()
-    result = parse_platform_comments(html)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-
-if __name__ == '__main__':
-    main()
+}
 ```
 
-## 参考实现
+字段说明：
 
-- 列表：`scripts/hnposts.py`, `scripts/v2exposts.py`
-- 详情：`scripts/hncomments.py`, `scripts/v2excomments.py`
+- `list_urls`：该平台需要抓取的列表页 URL 数组
+- `request_delay_seconds`：顺序抓取时两次请求之间的等待秒数
 
-## 更新文档
+## 调整现有数据源
 
-在 `SKILL.md` 的 `## URL 获取` 下添加新平台的列表页 URL。
+### 增加或删除列表页 URL
+
+直接修改 `sources.json` 对应平台的 `list_urls`。
+
+### 控制抓取频率
+
+如果需要降低请求频率，增大 `request_delay_seconds` 即可。
+
+建议值：
+
+- `0.0`：本地快速试验
+- `0.5`：轻量节流
+- `1.0` 或以上：更保守的顺序抓取
+
+## 新增平台的步骤
+
+新增平台时，不再拆成 `posts.py` 和 `comments.py` 两个文件，而是新增一个统一脚本。
+
+### 1. 新增平台脚本
+
+示例：新增 `scripts/reddit.py`
+
+脚本应提供：
+
+- `parse_posts(html)`
+- `parse_comments(html)`
+- `fetch_full(urls=None)`
+
+并通过命令行暴露：
+
+- `python3 scripts/reddit.py posts --json`
+- `python3 scripts/reddit.py comments --json`
+- `python3 scripts/reddit.py full --json`
+
+### 2. 在 `sources.json` 中加入平台配置
+
+```json
+"reddit": {
+    "list_urls": [
+        "https://www.reddit.com/r/programming/"
+    ],
+    "request_delay_seconds": 1.0
+}
+```
+
+### 3. 对齐统一数据结构
+
+新平台脚本必须遵循 `references/data-contract.md` 中的字段约定。
+
+### 4. 更新 `SKILL.md`
+
+在主技能文档里补充：
+
+- 触发说明中是否纳入新平台
+- 脚本入口用法
+- 需要时更新输出排序或分类规则
+
+## 验证方式
+
+### 验证列表解析
+
+```bash
+bash scripts/fetch.sh "<列表页URL>" | python3 scripts/<platform>.py posts --json
+```
+
+### 验证详情解析
+
+```bash
+bash scripts/fetch.sh "<讨论页URL>" | python3 scripts/<platform>.py comments --json
+```
+
+### 验证完整抓取
+
+```bash
+python3 scripts/<platform>.py full --json
+```
+
+验证重点：
+
+- URL 是否去重正确
+- `article_content` 和评论 `content` 是否保留 Markdown 结构
+- `total_comments` / `total_replies` 是否合理
+- 抓取间隔配置是否生效

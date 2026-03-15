@@ -1,0 +1,16 @@
+{
+  "hn": {
+    "list_urls": [
+      "https://news.ycombinator.com"
+    ],
+    "request_delay_seconds": 0.0
+  },
+  "v2ex": {
+    "list_urls": [
+      "https://www.v2ex.com/?tab=tech",
+      "https://www.v2ex.com/?tab=hot",
+      "https://www.v2ex.com/?tab=all"
+    ],
+    "request_delay_seconds": 0.0
+  }
+}
