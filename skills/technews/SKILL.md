@@ -1,72 +1,67 @@
 ---
 name: technews
-description: 快速获取 Hacker News 和/或 V2EX 的技术社区动态，支持单平台或双平台，输出概览并支持按序号查看帖子详情。当用户提到「看看今天 HN/V2EX 有什么」「HN 上有什么新鲜事」「V2EX 最近有啥」「帮我刷一下技术新闻」「最近技术圈什么动态」「看看热门帖子」「HN 今天有啥」等场景时使用。适用于技术热点追踪、社区讨论收集、最新技术资讯获取。
+description: 获取 Hacker News 和 V2EX 的技术社区动态，生成概览文档，并在用户按序号或 URL 追问时生成详情文档。用户提到“看看今天 HN 有什么”“V2EX 最近有啥”“帮我刷一下技术新闻”“整理成文档”“把这些热点发我”“根据上面的序号展开讲讲”“帮我看看这个帖子”“展开这条”等场景时都应使用本技能，即使用户没有明确提到 technews。
 ---
 
 # Tech News
 
-聚合 Hacker News 和 V2EX 热门帖子，按平台分组展示，并支持基于概览序号查看单帖详情。
+聚合 Hacker News 和 V2EX 热门帖子，先生成概览文档，再按用户选择生成详情文档。
 
-## 何时使用
+## 任务目录与命名
 
-- 用户要看 HN、V2EX 或两个平台的最新动态
-- 用户要快速浏览技术社区热点，再选择少量帖子深看
-- 用户已经拿到概览，并回复一个或多个序号查看详情
+- 所有产物统一存放在 `technews/` 目录（不存在则创建）
+- 概览批次命名基准：`YYYY-MM-DD-HHMMSS-PLATFORM`
+- 隐藏数据文件：`technews/.YYYY-MM-DD-HHMMSS-PLATFORM.json`
+- 概览文档：`technews/YYYY-MM-DD-HHMMSS-PLATFORM.md`
+- 详情文档：`technews/YYYY-MM-DD-HHMMSS-PLATFORM-NN.md`
 
-## 工作流
+## 核心工作流
 
-### 阶段一：首次抓取并生成概览
+### 阶段一：抓取并生成概览
+
+每次进入阶段一都视为一次新的资讯获取请求，重新抓取最新数据。
 
 1. 根据用户意图确定平台范围：只提 HN 就只抓 HN，只提 V2EX 就只抓 V2EX，未指定则两个都抓。
-2. 对每个平台优先使用完整抓取命令：
-   - `python3 scripts/hn.py full --json`
-   - `python3 scripts/v2ex.py full --json`
-3. 合并每个平台返回的帖子数据。`full` 模式已在脚本内部按讨论页链接完成平台内去重。
-4. 平台内独立聚类，不预设固定分类名；根据内容自动生成贴切分类。
-5. 平台内排序：
-   - HN 按 `points` 降序，必要时以 `reply_count` 辅助
-   - V2EX 按 `reply_count` 降序，必要时以时间或讨论密度辅助
-6. 生成概览输出。格式见 `references/output-format.md`。
+2. 以当前时间戳和平台标识确定本批次命名基准：`YYYY-MM-DD-HHMMSS-PLATFORM`（单平台如 `<批次基准>-HN`，双平台如 `<批次基准>-HN-V2EX`）。
+3. 对每个平台使用完整抓取命令，并直接输出到该批次隐藏 JSON 文件：
+   - HN：`python3 scripts/hn.py full --json --output "technews/.YYYY-MM-DD-HHMMSS-HN.json"`
+   - V2EX：`python3 scripts/v2ex.py full --json --output "technews/.YYYY-MM-DD-HHMMSS-V2EX.json"`
+   - 双平台合并基准：`technews/.YYYY-MM-DD-HHMMSS-HN-V2EX.json`
+4. 基于步骤 3 得到的帖子数据，按平台分别聚类（不跨平台混合），分类名贴近当批内容的实际主题。
+5. 按 [references/output-format.md](references/output-format.md) 规定的内容结构与翻译方式，将聚类结果生成概览文档，保存为 `technews/YYYY-MM-DD-HHMMSS-PLATFORM.md`。
+6. 将概览文档的完整内容发送给用户。
 
-### 阶段二：用户按序号查看详情
+### 阶段二：生成详情文档
 
-1. 用户回复的序号对应概览中的全局编号，支持一次输入多个序号。
-2. 从当前对话上下文中定位对应帖子，直接使用已抓取的完整数据生成详情。
-3. 不重复抓取同一批帖子，除非用户明确要求刷新。
+1. 用户回复序号（对应概览中的全局编号，支持多个）或直接提供帖子 URL。
+2. 按序号从概览文档中定位帖子的讨论页 URL；用户直接提供 URL 时直接使用。
+3. 用 URL 在对应概览的隐藏 JSON 文件中查找完整帖子数据。未命中或文件不存在时，根据 URL 判断平台并重新抓取，并将结果写入临时详情数据文件：
+   - HN：`bash scripts/fetch.sh "<讨论页URL>" | python3 scripts/hn.py comments --json --output "technews/.<批次基准>-HN-<NN>.detail.json"`
+   - V2EX：`bash scripts/fetch.sh "<讨论页URL>" | python3 scripts/v2ex.py comments --json --output "technews/.<批次基准>-V2EX-<NN>.detail.json"`
+4. 基于步骤 3 命中的帖子数据或临时详情数据，按 [references/output-format.md](references/output-format.md) 规定的内容结构与翻译方式生成详情文档。
+5. 将详情文档保存到 `technews/` 目录，文件命名为 `YYYY-MM-DD-HHMMSS-PLATFORM-NN.md`（NN 为两位全局序号，时间戳沿用概览的命名基准；无概览时使用当前时间戳）。
+6. 将本次生成的详情文档完整内容发送给用户。
 
-## 实施规则
+## 命令参考
 
-- `full` 模式默认从 `sources.json` 读取列表页 URL 和抓取间隔；单次 `posts` / `comments` 命令按传入 URL 执行。
-- `article_content` 和评论 `content` 一律视为 Markdown 字符串，不是纯文本。
-- 遇到图片、链接、代码块、引用、换行时，保留其 Markdown 结构，而不是压平成一句话。
-- 详情页输出时优先总结讨论，再精选 3-5 条有代表性的评论。
-- 英文内容默认给出中文表达；翻译和展示规则见 `references/output-format.md`。
-
-## 脚本入口
+调试解析结果或扩展数据源时，参阅 [references/adding-sources.md](references/adding-sources.md)。
 
 ### Hacker News
 
 ```bash
-bash scripts/fetch.sh "<列表页URL>" | python3 scripts/hn.py posts --json
-bash scripts/fetch.sh "<讨论页URL>" | python3 scripts/hn.py comments --json
-python3 scripts/hn.py full --json
+python3 scripts/hn.py full --json --output "technews/.<批次基准>-HN.json"
+bash scripts/fetch.sh "<讨论页URL>" | python3 scripts/hn.py comments --json --output "technews/.<批次基准>-HN-<NN>.detail.json"
 ```
 
 ### V2EX
 
 ```bash
-bash scripts/fetch.sh "<列表页URL>" | python3 scripts/v2ex.py posts --json
-bash scripts/fetch.sh "<讨论页URL>" | python3 scripts/v2ex.py comments --json
-python3 scripts/v2ex.py full --json
+python3 scripts/v2ex.py full --json --output "technews/.<批次基准>-V2EX.json"
+bash scripts/fetch.sh "<讨论页URL>" | python3 scripts/v2ex.py comments --json --output "technews/.<批次基准>-V2EX-<NN>.detail.json"
 ```
 
 ## 参考文档
 
-- `references/adding-sources.md`：数据源配置、抓取频率、扩展新平台
-- `references/data-contract.md`：统一字段约定与输出数据结构
-- `references/output-format.md`：概览/详情模板、翻译规则、展示要求
-
-## 依赖
-
-- `curl`：页面抓取
-- `beautifulsoup4`：HTML 解析
+- [references/output-format.md](references/output-format.md)：概览与详情模板、翻译规则、展示要求
+- [references/data-contract.md](references/data-contract.md)：统一字段约定与输出数据结构
+- [references/adding-sources.md](references/adding-sources.md)：数据源配置、抓取频率、扩展新平台

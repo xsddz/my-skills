@@ -128,5 +128,5 @@ python3 scripts/<platform>.py full --json
 
 - URL 是否去重正确
 - `article_content` 和评论 `content` 是否保留 Markdown 结构
-- `total_comments` / `total_replies` 是否合理
+- `reply_count` 是否合理
 - 抓取间隔配置是否生效

@@ -10,6 +10,7 @@ V2EX 脚本
   bash scripts/fetch.sh "https://www.v2ex.com/?tab=tech" | python3 scripts/v2ex.py posts --json
   bash scripts/fetch.sh "https://www.v2ex.com/t/1234567" | python3 scripts/v2ex.py comments --json
   python3 scripts/v2ex.py full --json
+  python3 scripts/v2ex.py full --json --output "technews/.<批次基准>-V2EX.json"
 """
 
 import sys
@@ -295,8 +296,7 @@ def parse_comments(html):
             'url': _extract_canonical_url(soup),
             'article_url': None,
             'article_content': _extract_article_content(soup),
-            'total_comments': 0,
-            'total_replies': 0,
+            'reply_count': 0,
             'comments': [],
         }
 
@@ -329,14 +329,12 @@ def parse_comments(html):
                     roots.remove(node)
                 parent_node['replies'].append(node)
 
-    total_replies = _count_replies(roots)
     return {
         'title': _extract_title(soup),
         'url': _extract_canonical_url(soup),
         'article_url': None,
         'article_content': _extract_article_content(soup),
-        'total_comments': len(roots),
-        'total_replies': total_replies,
+        'reply_count': len(roots),
         'comments': roots,
     }
 
@@ -379,13 +377,9 @@ def fetch_full(urls=None):
             p['article_url'] = data.get('article_url', p.get('article_url'))
             p['article_content'] = data.get('article_content', p.get('article_content'))
             p['comments'] = data.get('comments', [])
-            p['total_comments'] = data.get('total_comments', 0)
-            p['total_replies'] = data.get('total_replies', 0)
         except Exception as e:
             print(f"    跳过: {e}", file=sys.stderr)
             p.setdefault('comments', [])
-            p.setdefault('total_comments', 0)
-            p.setdefault('total_replies', 0)
 
     return posts
 
@@ -399,21 +393,55 @@ def _read_input(source):
         return f.read()
 
 
+def _extract_output_path(args):
+    output_path = None
+    cleaned_args = []
+    i = 0
+    while i < len(args):
+        token = args[i]
+        if token in ('-o', '--output'):
+            if i + 1 >= len(args):
+                print('参数错误: --output 需要文件路径', file=sys.stderr)
+                sys.exit(2)
+            output_path = args[i + 1]
+            i += 2
+            continue
+        cleaned_args.append(token)
+        i += 1
+    return cleaned_args, output_path
+
+
+def _emit_json(data, output_path=None, pretty=False):
+    text = json.dumps(data, ensure_ascii=False, indent=2 if pretty else None)
+    if output_path:
+        parent = os.path.dirname(output_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        print(f'✅ JSON 已保存: {output_path}', file=sys.stderr)
+        return
+    print(text)
+
+
 def main():
     args = sys.argv[1:]
+    args, output_path = _extract_output_path(args)
     if not args or args[0] in ('-h', '--help'):
         print(__doc__)
         sys.exit(0)
 
     subcmd = args[0]
     as_json = '--json' in args
+    if output_path:
+        as_json = True
 
     if subcmd == 'posts':
         source = args[1] if len(args) > 1 and not args[1].startswith('-') else '-'
         html = _read_input(source)
         posts = parse_posts(html)
         if as_json:
-            print(json.dumps(posts, ensure_ascii=False, indent=2))
+            _emit_json(posts, output_path, pretty=True)
         else:
             print(f'✅ 提取到 {len(posts)} 个帖子\n')
             for i, p in enumerate(posts[:10], 1):
@@ -432,7 +460,7 @@ def main():
         html = _read_input(source)
         result = parse_comments(html)
         if as_json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            _emit_json(result, output_path, pretty=True)
         else:
             comments = result.get('comments', [])
             print(f'✅ 提取到 {len(comments)} 条根评论\n')
@@ -446,7 +474,7 @@ def main():
     elif subcmd == 'full':
         posts = fetch_full()
         if as_json:
-            print(json.dumps(posts, ensure_ascii=False))
+            _emit_json(posts, output_path, pretty=False)
         else:
             print(f'✅ 完整抓取完成，共 {len(posts)} 篇帖子')
 
